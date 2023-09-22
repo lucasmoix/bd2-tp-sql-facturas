@@ -69,10 +69,10 @@ AS
 BEGIN
 INSERT INTO Productos (Nombre,Precio,Stock,CodPais) values (@nombre,@precio,@stock,@codPais )
 END
-
+GO
 
 --EXEC sp_InsertarProducto @nombre = 'MAIZ' ,@precio = 34.45, @stock = 10 ,@codPais =1
-GO
+
 
 CREATE PROCEDURE sp_InsertarCliente @dni int, @nombre VARCHAR(20), @apellido VARCHAR(20), @fechaNacimiento DATE, @codArea int, @numero int OUTPUT AS
 INSERT INTO Clientes (Dni,Nombre,Apellido,FechaNacimiento) values (@Dni, @nombre,@apellido,@fechaNacimiento)
@@ -80,34 +80,141 @@ INSERT INTO Clientes (Dni,Nombre,Apellido,FechaNacimiento) values (@Dni, @nombre
 		BEGIN INSERT INTO Telefonos (Dni,CodArea,Numero)VALUES(@dni,@codArea,@numero) 
 		END
 	END
-
+GO
 
 --EXEC sp_InsertarCliente @dni =22768999 , @nombre ='Lucas' ,@apellido ='Moix' , @fechaNacimiento= '1987-11-06', @codArea =null, @numero= null
 --EXEC sp_InsertarCliente @dni = 22768998, @nombre ='Marcelop' ,@apellido = 'Lopez', @fechaNacimiento= '2023-11-06', @codArea = 2281, @numero= 786932
-GO
 
 CREATE PROCEDURE sp_VerificarStock @idProducto int  AS
 BEGIN 
 SELECT stock from Productos WHERE IdProducto = @idProducto;
 END
+GO
 
 --EXEC sp_VerificarStock 2
-GO
 
 CREATE PROCEDURE sp_ListarVentasXCliente @dni INT, @desde DATE, @hasta DATE 
 AS
 BEGIN
 SELECT * FROM Ventas WHERE dni = @dni AND Fecha BETWEEN @desde AND @hasta
 END
-
---EXEC sp_ListarVentasXCliente 22768998, '2003-01-01', '2023-09-17'
 GO
 
-CREATE PROCEDURE sp_InsertarVenta @Fecha DATE, @dni INT
+--EXEC sp_ListarVentasXCliente 22768998, '2003-01-01', '2023-09-17'
+
+--ERRORER
+--creo mensaje de error
+--sp_addmessage 50003, 11, "Falta Stock" 
+--sp_addmessage 50004, 11, "No se puede realizar la venta"
+
+CREATE PROCEDURE sp_InsertaDetalle
+@IdVenta int,
+ @IdProducto int,
+ @Cantidad NUMERIC,
+ @Precio NUMERIC
+AS
+
+    DECLARE @STOCK_MINIMO NUMERIC
+    DECLARE @STOCK_REAL NUMERIC
+    DECLARE @STOCK_DISPONIBLE NUMERIC
+    DECLARE @STOCK_NUEVO NUMERIC
+
+    SET @STOCK_MINIMO=5
+    SELECT @STOCK_DISPONIBLE= (Stock -@STOCK_MINIMO), @STOCK_REAL=Stock from Productos WHERE IdProducto=@IdProducto --(EXEC sp_VerificarStock 2);
+    IF(@STOCK_REAL < @STOCK_MINIMO)
+        BEGIN
+            RAISERROR(50003,11,1)
+        END
+    IF @STOCK_DISPONIBLE >= @Cantidad
+        BEGIN
+            INSERT INTO Detalles(IdVenta,IdProducto,Cantidad,Precio)
+            values(@IdVenta,@IdProducto,@Cantidad,@Precio)
+            --Actualizar Stock
+            SET @STOCK_NUEVO= @STOCK_MINIMO + (@STOCK_DISPONIBLE - @Cantidad)
+            UPDATE Productos SET Stock= @STOCK_NUEVO WHERE IdProducto=@IdProducto
+        END
+    ELSE
+        BEGIN
+            RAISERROR (50004, 11, 1);
+        END
+GO
+
+CREATE PROCEDURE sp_InsertarVenta
+@Fecha DATE, 
+@dni INT
 AS
 BEGIN
-INSERT  Ventas VALUES (@Fecha, @dni)
+	--INSERTO VENTA
+	INSERT  Ventas (Fecha,Dni)VALUES (@Fecha, @dni);
 END
+GO
 
---EXEC sp_InsertarVenta @Fecha = '2023-09-17', @dni = 22768998
+CREATE PROCEDURE sp_InsertarVenta_OUTPUT
+@Fecha DATE, 
+@dni INT,
+@IdProducto int,
+@Cantidad NUMERIC,
+@Precio NUMERIC
+OUTPUT, @error_code int OUTPUT, @error_description char(50) OUTPUT
+AS
+declare @IdVenta INT
+		select @error_code=0;
+		select @error_description='';
+		select @IdVenta=-1;
+		begin try
+			INSERT  Ventas (Fecha,Dni)VALUES (@Fecha, @dni);
+			SET @IdVenta= SCOPE_IDENTITY();
+			 EXEC sp_InsertaDetalle @IdVenta,@IdProducto,@Cantidad,@Precio;
+		END TRY
+		BEGIN CATCH
+			SET @IdVenta=-1;
+			select @error_code=ERROR_NUMBER();
+			select @error_description=ERROR_MESSAGE();
+		END CATCH;
+
+--creo mensaje de error
+--sp_addmessage 50003, 11, "Falta Stock" 
+
+ --DECLARE @error_code int;
+ --DECLARE @error_description char(50);
+
+ --EXEC sp_InsertarVenta_OUTPUT '2023-09-15',22768998,2,5,20.10 , @error_code OUTPUT, @error_description OUTPUT
+ --PRINT '1.ErrorCode='+str(@error_code)+ '  ERROR_DESCRIPTION='+@error_description;
+GO
+
+CREATE PROCEDURE sp_ActualizaPrecios
+@FactorAumento NUMERIC(9,2)
+as
+BEGIN
+	UPDATE Productos SET Precio= (SELECT CAST(L2.Precio+(L2.Precio *@FactorAumento) AS DECIMAL(18,2))FROM Productos L2 WHERE L2.IdProducto=Productos.IdProducto )
+END
+GO
+
+--exec sp_ActualizaPrecios 0.15
+
+CREATE PROCEDURE sp_ObtenerProductosPorPais
+@CodPais int
+AS
+BEGIN
+	SELECT A.IdProducto,A.Nombre,A.CodPais,B.DescPais
+	FROM Productos A INNER JOIN Paises B
+	ON A.CodPais=B.CodPais
+	WHERE A.CodPais=@CodPais
+END
+GO
+
+-- sp_ObtenerProductosPorPais 2
+
+CREATE PROCEDURE sp_BorrarTelefono
+@NroTelefono INT
+AS
+
+IF (SELECT COUNT(1)TOTAL FROM Telefonos WHERE DNI IN(SELECT DNI FROM Telefonos WHERE Numero=@NroTelefono))>1
+	BEGIN
+		DELETE FROM Telefonos WHERE Numero=@NroTelefono
+	END
+ELSE
+	BEGIN
+	RAISERROR('No se puede Borrar',16,1)
+	END
 GO
