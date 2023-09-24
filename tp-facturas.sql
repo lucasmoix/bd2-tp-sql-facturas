@@ -35,7 +35,7 @@ Numero int NOT NULL,
 FOREIGN KEY (Dni) REFERENCES Clientes(Dni)
 )
 GO
-CREATE UNIQUE INDEX index_telefon
+CREATE UNIQUE INDEX index_telefono
  ON telefonos (Dni,CodArea,numero)
 -- INSERT Telefonos(Dni,CodArea,Numero)VALUES(22768999,11,45678987),(22768998,11,8799988),(22768998,2281,786932)
 
@@ -149,38 +149,6 @@ BEGIN
 END
 GO
 
-CREATE PROCEDURE sp_InsertarVenta_OUTPUT
-@Fecha DATE, 
-@dni INT,
-@IdProducto int,
-@Cantidad NUMERIC,
-@Precio NUMERIC
-OUTPUT, @error_code int OUTPUT, @error_description char(50) OUTPUT
-AS
-declare @IdVenta INT
-		select @error_code=0;
-		select @error_description='';
-		select @IdVenta=-1;
-		begin try
-			INSERT  Ventas (Fecha,Dni)VALUES (@Fecha, @dni);
-			SET @IdVenta= SCOPE_IDENTITY();
-			 EXEC sp_InsertaDetalle @IdVenta,@IdProducto,@Cantidad,@Precio;
-		END TRY
-		BEGIN CATCH
-			SET @IdVenta=-1;
-			select @error_code=ERROR_NUMBER();
-			select @error_description=ERROR_MESSAGE();
-		END CATCH;
-
---creo mensaje de error
---sp_addmessage 50003, 11, "Falta Stock" 
-
- --DECLARE @error_code int;
- --DECLARE @error_description char(50);
-
- --EXEC sp_InsertarVenta_OUTPUT '2023-09-15',22768998,2,5,20.10 , @error_code OUTPUT, @error_description OUTPUT
- --PRINT '1.ErrorCode='+str(@error_code)+ '  ERROR_DESCRIPTION='+@error_description;
-GO
 
 CREATE PROCEDURE sp_ActualizaPrecios
 @FactorAumento NUMERIC(9,2)
@@ -206,15 +174,19 @@ GO
 -- sp_ObtenerProductosPorPais 2
 
 CREATE PROCEDURE sp_BorrarTelefono
+@dni int,
 @NroTelefono INT
 AS
 
-IF (SELECT COUNT(1)TOTAL FROM Telefonos WHERE DNI IN(SELECT DNI FROM Telefonos WHERE Numero=@NroTelefono))>1
+IF (SELECT COUNT(1) FROM Telefonos WHERE DNI=@dni AND Numero= @NroTelefono)>1
 	BEGIN
-		DELETE FROM Telefonos WHERE Numero=@NroTelefono
+		DELETE FROM Telefonos WHERE DNI=@dni AND Numero=@NroTelefono
 	END
 ELSE
 	BEGIN
 	RAISERROR('No se puede Borrar',16,1)
 	END
 GO
+
+--EXEC sp_BorrarTelefono 22768998, 25
+
